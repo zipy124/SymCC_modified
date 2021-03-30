@@ -287,6 +287,13 @@ void _sym_push_path_constraint(SymExpr constraint, int taken,
     return;
 
   g_solver->addJcc(allocatedExpressions.at(constraint), taken != 0, site_id);
+  if (taken != 0) {
+      cout << "Trying to solve Negated " << _sym_expr_to_string(constraint) << endl;
+  }
+  else{
+      cout << "Trying to solve " << _sym_expr_to_string(constraint) << endl;
+  }
+
 }
 
 SymExpr _sym_get_input_byte(size_t offset) {

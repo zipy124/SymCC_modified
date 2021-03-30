@@ -27,6 +27,12 @@ struct Config {
   /// The input file, if any.
   std::string inputFile;
 
+  /// The file containing extra constraints, if any.
+  std::string constraintFile;
+
+  /// Do we symbolize arguments?
+  bool symbolize_args = false;
+
   /// The file to log constraint solving information to.
   std::string logFile = "";
 

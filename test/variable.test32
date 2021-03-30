@@ -1,0 +1,2 @@
+RUN: %symcc -O2 -m32 %S/variable.c -o %t_32
+RUN:  %t_32 2>&1 | %filecheck %S/variable.c

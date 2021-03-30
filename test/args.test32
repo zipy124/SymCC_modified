@@ -1,0 +1,2 @@
+RUN: %symcc -O2 -m32 %S/args.c -o %t_32
+RUN: env SYMCC_ENABLE_ARGS=ON %t_32 2 2>&1 | %filecheck %S/args.c

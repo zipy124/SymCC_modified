@@ -77,6 +77,13 @@ Runtime::Runtime(Module &M) {
       import(M, "_sym_set_parameter_expression", voidT, int8T, ptrT);
   getParameterExpression =
       import(M, "_sym_get_parameter_expression", ptrT, int8T);
+
+  // OUR OWN FUNCTION HERE
+  getMainParameterExpression =
+          import(M, "_sym_get_main_parameter_expression", voidT, IRB.getInt32Ty(), ptrT->getPointerTo());
+  // ANOTHER ONE OF OURS
+  symbolizeVar = import(M, "_sym_symbolize_var", voidT, ptrT, intPtrType);
+
   setReturnExpression = import(M, "_sym_set_return_expression", voidT, ptrT);
   getReturnExpression = import(M, "_sym_get_return_expression", ptrT);
 

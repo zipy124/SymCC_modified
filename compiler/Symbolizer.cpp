@@ -27,10 +27,38 @@ using namespace llvm;
 
 void Symbolizer::symbolizeFunctionArguments(Function &F) {
   // The main function doesn't receive symbolic arguments.
-  if (F.getName() == "main")
-    return;
+  //if (F.getName() == "main")
+  //  return;
 
   IRBuilder<> IRB(F.getEntryBlock().getFirstNonPHI());
+
+  // Count the amount of arguments to the function
+  int args = 0;
+  for (auto &arg : F.args()) {
+    if (!arg.user_empty())
+      args += 1;
+  }
+  // Check we have the right number of arguments to symbolize
+  if (F.getName() == "main" && args >= 2) {
+    // Get argv and argc and use them to symbolize each argument
+    auto argc = F.getArg(0);
+    auto argv = F.getArg(1);
+
+    IRB.CreateCall(runtime.getMainParameterExpression,
+                                               {argc, argv});
+    return;
+  }
+
+  if(F.getName().equals(StringRef("symbolize_this_please"))){
+    // We've intercepted the request to symbolize here.
+    // Lets set the arguments as symbolic, since the program asked nicely!
+    auto var = F.getArg(0);
+    auto size = F.getArg(1);
+
+    IRB.CreateCall(runtime.symbolizeVar,
+                   {var, size});
+    return;
+  }
 
   for (auto &arg : F.args()) {
     if (!arg.user_empty())
@@ -309,6 +337,8 @@ void Symbolizer::handleFunctionCall(CallBase &I, Instruction *returnPoint) {
   }
 
   IRBuilder<> IRB(returnPoint);
+
+
   IRB.CreateCall(runtime.notifyRet, getTargetPreferredInt(&I));
   IRB.SetInsertPoint(&I);
   IRB.CreateCall(runtime.notifyCall, getTargetPreferredInt(&I));

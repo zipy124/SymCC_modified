@@ -22,9 +22,14 @@
 #include "Shadow.h"
 #include "GarbageCollection.h"
 
+#include "Config.h"
+
 namespace {
 
 constexpr int kMaxFunctionArguments = 256;
+
+uint64_t argInputOffset = 0;
+uint64_t varCount = 0;
 
 /// Global storage for function parameters and the return value.
 SymExpr g_return_value;
@@ -48,6 +53,38 @@ void _sym_set_parameter_expression(uint8_t index, SymExpr expr) {
 
 SymExpr _sym_get_parameter_expression(uint8_t index) {
   return g_function_arguments[index];
+}
+
+void _sym_get_main_parameter_expression(uint32_t argc, uint8_t **argv){
+  // Check if user wants to symbolize args
+  if(!g_config.symbolize_args){
+    return;
+  }
+
+  char **argv_cast = (char**) argv;
+  if (argc > 1)
+  {
+    // Loop over arguments using pointer arithmetic
+    for (char **pargv = argv_cast+1; *pargv != argv_cast[argc]; pargv++) {
+
+      int length = 1;
+      for (char *ptr = *pargv; *ptr != '\0'; ptr++) {
+          length++;
+        }
+      // Map the argument into shadow memory to treat as symbolic
+      ReadWriteShadow shadow(*pargv, length);
+      std::generate(shadow.begin(), shadow.end(),
+                    []() { return _sym_get_arg_byte(argInputOffset++); });
+    }
+  }
+  return;
+}
+
+void _sym_symbolize_var(void* x, size_t size){
+  ReadWriteShadow shadow(x, size);
+  std::generate(shadow.begin(), shadow.end(),
+                []() { return _sym_get_var_byte(varCount++); });
+  return;
 }
 
 void _sym_memcpy(uint8_t *dest, const uint8_t *src, size_t length) {

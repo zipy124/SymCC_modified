@@ -21,6 +21,7 @@
 #include <iostream>
 #include <set>
 #include <vector>
+#include <fstream>
 
 #ifndef NDEBUG
 #include <chrono>
@@ -59,10 +60,32 @@ Z3_ast g_rounding_mode;
 /// The global Z3 solver.
 Z3_solver g_solver; // TODO make thread-local
 
-// Some global constants for efficiency.
+/// Some global constants for efficiency.
 Z3_ast g_null_pointer, g_true, g_false;
 
 FILE *g_log = stderr;
+
+/// Boolean to log if path condition is empty or not
+bool path_started = 0;
+
+/// Boolean for if extra constraints have been taken yet or not
+bool got_input = 0;
+
+/// Boolean that is set while SymCC is handling extra constraints
+bool handling_constraints = 0;
+
+/// Boolean that is set if an error is encoutered while handling extra constraints
+bool error_handling_constraints = 0;
+
+/// Variable to store current path condition
+Z3_ast path_condition;
+
+std::vector<SymExpr> varBytes;
+
+std::vector<SymExpr> argBytes;
+
+std::vector<SymExpr> stdinBytes;
+
 
 #ifndef NDEBUG
 [[maybe_unused]] void dump_known_regions() {
@@ -73,6 +96,11 @@ FILE *g_log = stderr;
 }
 
 void handle_z3_error(Z3_context c [[maybe_unused]], Z3_error_code e) {
+  // Trying to add constraint on variable that isn't yet symbolized
+  if(handling_constraints){
+    error_handling_constraints = 1;
+    return;
+  }
   assert(c == g_context && "Z3 error in unknown context");
   std::cerr << Z3_get_error_msg(g_context, e) << std::endl;
   assert(!"Z3 error");
@@ -98,6 +126,14 @@ SymExpr registerExpression(Z3_ast expr) {
     // counter.
     allocatedExpressions.insert(expr);
     Z3_inc_ref(g_context, expr);
+    //fprintf(g_log, "New Expr:\n%s\n",
+    //        Z3_ast_to_string(g_context, expr));
+
+    //fprintf(g_log, "New Expr (Simplified):\n%s\n",
+    //        Z3_ast_to_string(g_context, Z3_simplify(g_context, expr)));
+
+    fflush(g_log);
+
   }
 
   return expr;
@@ -179,7 +215,7 @@ Z3_ast _sym_build_float(double value, int is_double) {
 }
 
 Z3_ast _sym_get_input_byte(size_t offset) {
-  static std::vector<SymExpr> stdinBytes;
+  //static std::vector<SymExpr> stdinBytes;
 
   if (offset < stdinBytes.size())
     return stdinBytes[offset];
@@ -191,6 +227,44 @@ Z3_ast _sym_get_input_byte(size_t offset) {
   stdinBytes.push_back(var);
 
   return var;
+}
+
+Z3_ast _sym_get_arg_byte(size_t offset) {
+  //static std::vector<SymExpr> argBytes;
+
+  if (offset < argBytes.size())
+    return argBytes[offset];
+
+  // fprintf(g_log, "Current Arg bytes: %s\n",&(std::to_string(argBytes.size())[0]));
+
+  auto varName = "arg" + std::to_string(argBytes.size());
+  auto *var = build_variable(varName.c_str(), 8);
+
+  argBytes.resize(offset);
+  argBytes.push_back(var);
+
+  return var;
+}
+
+Z3_ast _sym_get_var_byte(size_t offset) {
+
+  //static std::vector<SymExpr> varBytes;
+
+  if (offset < varBytes.size())
+    return varBytes[offset];
+
+  // fprintf(g_log, "Current Vars: %s\n",&(std::to_string(varBytes.size())[0]));
+
+  auto varName = "var" + std::to_string(varBytes.size());
+  auto *var = build_variable(varName.c_str(), 8);
+
+  varBytes.resize(offset);
+  varBytes.push_back(var);
+
+//  fprintf(g_log, "Current Vars: %s\n",&(std::to_string(varBytes.size())[0]));
+
+  return var;
+
 }
 
 Z3_ast _sym_build_null_pointer(void) { return g_null_pointer; }
@@ -441,6 +515,103 @@ void _sym_push_path_constraint(Z3_ast constraint, int taken,
   Z3_ast not_constraint =
       Z3_simplify(g_context, Z3_mk_not(g_context, constraint));
   Z3_inc_ref(g_context, not_constraint);
+
+  // Negate the constraint if we did not take the path
+  Z3_ast our_path = taken ? constraint : not_constraint;
+
+  // If path constraint is empty, then create it
+  if (path_started == 0){
+      path_condition = our_path;
+      Z3_inc_ref(g_context, path_condition);
+      path_started = 1;
+  }
+  // Otherwise create a conjunction between the new constraint and the path condition
+  else{
+      const Z3_ast path_args[2] = {our_path, path_condition};
+
+      Z3_ast path_condition_new = Z3_mk_and(g_context, 2, path_args);
+
+      Z3_dec_ref(g_context, path_condition);
+
+      path_condition = path_condition_new;
+
+      Z3_inc_ref(g_context, path_condition);
+
+  }
+
+  // If we have extra constraints and we haven't read them yet lets handle them
+  if(!g_config.constraintFile.empty() && got_input == 0) {
+    // Tell error handler that we are handling constraints
+    handling_constraints = 1;
+
+    // Following code will collect the names and declarations of current symbolic variables
+    size_t num_decs = varBytes.size();
+    size_t num_decs_running_total = varBytes.size();
+    size_t num_decs_total = varBytes.size() + stdinBytes.size() + argBytes.size();
+
+    Z3_symbol names[num_decs_total];
+    Z3_func_decl decls[num_decs_total];
+
+    for (size_t i = 0; i < num_decs; i++) {
+      decls[i] = Z3_get_app_decl(g_context, Z3_to_app(g_context, (Z3_ast) varBytes[i]));
+      names[i] = Z3_mk_string_symbol(g_context, ("var" + std::to_string(i)).c_str());
+    }
+
+    num_decs = stdinBytes.size();
+
+    for (size_t i = 0; i < num_decs; i++) {
+      decls[i+num_decs_running_total] = Z3_get_app_decl(g_context, Z3_to_app(g_context, (Z3_ast) stdinBytes[i]));
+      names[i+num_decs_running_total] = Z3_mk_string_symbol(g_context, ("stdin" + std::to_string(i)).c_str());
+    }
+
+    num_decs_running_total += stdinBytes.size();
+    num_decs = argBytes.size();
+
+    for (size_t i = 0; i < num_decs; i++) {
+      decls[i+num_decs_running_total] = Z3_get_app_decl(g_context, Z3_to_app(g_context, (Z3_ast) argBytes[i]));
+      names[i+num_decs_running_total] = Z3_mk_string_symbol(g_context, ("arg" + std::to_string(i)).c_str());
+    }
+
+    std::ifstream stream(g_config.constraintFile);
+    std::string constraint_string;
+
+    stream.seekg(0, std::ios::end);
+    constraint_string.reserve(stream.tellg());
+    stream.seekg(0, std::ios::beg);
+
+    constraint_string.assign((std::istreambuf_iterator<char>(stream)),
+               std::istreambuf_iterator<char>());
+
+    /// Example string "(assert (not (= (bvsrem_i (concat var3 var2 var1 var0) #x00000007) #x00000000)))"
+    // Feed string and the current symbolic variables into the function to parse it
+    Z3_ast_vector result = Z3_parse_smtlib2_string(g_context,
+                                                   constraint_string.c_str(),
+                                                   0, 0, 0, num_decs_total, names, decls);
+    // If there was an error while executing the previous function abort
+    if(error_handling_constraints){
+      handling_constraints = 0;
+      error_handling_constraints = 0;
+    }
+    // If no errors then continue as normal
+    else {
+      // Get the extra constraint from the vector
+      Z3_ast extra_constraint = Z3_ast_vector_get(g_context, result, 0);
+      // Print out the constraint recieved so the user knows it worked
+      fprintf(g_log, "Extra constraint received:\n%s\n",
+              Z3_ast_to_string(g_context, extra_constraint));
+      // Assert the new constraint to the solver
+      Z3_inc_ref(g_context, extra_constraint);
+      Z3_solver_assert(g_context, g_solver, extra_constraint);
+      Z3_dec_ref(g_context, extra_constraint);
+      // Don't handle input again so set flag
+      got_input = 1;
+      // Tell error handler we are no longer handling errors
+      handling_constraints = 0;
+    }
+  }
+
+  fprintf(g_log, "Current path_condition:\n%s\n",
+          Z3_ast_to_string(g_context, Z3_simplify(g_context, path_condition)));
 
   Z3_solver_push(g_context, g_solver);
   Z3_solver_assert(g_context, g_solver, taken ? not_constraint : constraint);

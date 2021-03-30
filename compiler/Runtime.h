@@ -52,6 +52,10 @@ struct Runtime {
   SymFnT buildBoolToBits{};
   SymFnT pushPathConstraint{};
   SymFnT getParameterExpression{};
+  // OUR OWN 2 FUNCTIONS FOLLOW
+  SymFnT getMainParameterExpression{};
+  SymFnT symbolizeVar{};
+
   SymFnT setParameterExpression{};
   SymFnT setReturnExpression{};
   SymFnT getReturnExpression{};

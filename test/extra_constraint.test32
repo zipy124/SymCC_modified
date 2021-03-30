@@ -1,0 +1,3 @@
+RUN: echo "(assert (and (bvsgt #x0000000a (concat var3 var2 var1 var0)) (bvsle #x00000000 (concat var3 var2 var1 var0))))" > %T/con.txt
+RUN: %symcc -O2 -m32 %S/extra_constraint.c -o %t_32
+RUN: env SYMCC_CONSTRAINT_FILE=%T/con.txt %t_32 2>&1 | %filecheck %S/extra_constraint.c

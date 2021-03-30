@@ -133,6 +133,10 @@ size_t _sym_bits_helper(SymExpr expr);
  */
 void _sym_set_parameter_expression(uint8_t index, SymExpr expr);
 SymExpr _sym_get_parameter_expression(uint8_t index);
+// OUR OWN 2 FUNCTIONS BELOW
+void _sym_get_main_parameter_expression(uint32_t argc, uint8_t **argv);
+void _sym_symbolize_var(void* x, size_t size);
+
 void _sym_set_return_expression(SymExpr expr);
 SymExpr _sym_get_return_expression(void);
 
@@ -142,6 +146,9 @@ SymExpr _sym_get_return_expression(void);
 void _sym_push_path_constraint(SymExpr constraint, int taken,
                                uintptr_t site_id);
 SymExpr _sym_get_input_byte(size_t offset);
+// OUR OWN 2 FUNCTIONS BELOW
+SymExpr _sym_get_arg_byte(size_t offset);
+SymExpr _sym_get_var_byte(size_t offset);
 
 /*
  * Memory management

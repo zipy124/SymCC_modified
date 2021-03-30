@@ -53,6 +53,14 @@ void loadConfig() {
   if (inputFile != nullptr)
     g_config.inputFile = inputFile;
 
+  auto *constraintFile = getenv("SYMCC_CONSTRAINT_FILE");
+  if (constraintFile != nullptr)
+    g_config.constraintFile = constraintFile;
+
+  auto *args = getenv("SYMCC_ENABLE_ARGS");
+  if (args != nullptr)
+    g_config.symbolize_args = checkFlagString(args);
+
   auto *logFile = getenv("SYMCC_LOG_FILE");
   if (logFile != nullptr)
     g_config.logFile = logFile;
